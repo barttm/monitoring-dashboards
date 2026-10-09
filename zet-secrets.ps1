@@ -14,7 +14,7 @@
 
 param(
     [string]$Repo = "barttm/monitoring-dashboards",
-    [string]$Domein = "monitoring.nepocon.nl",
+    [string]$Domein = "argeo.nl",
     [switch]$AlleenWachtwoorden,
     [string[]]$Vernieuw = @()
 )

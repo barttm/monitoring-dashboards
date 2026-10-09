@@ -55,7 +55,7 @@ LOGO = BASIS / "assets" / "nepocon_logo.png"
 CONFIG = BASIS / "projecten.json"
 LOKAAL_WW = Path(os.environ.get("DASHBOARD_WACHTWOORDEN_BESTAND") or
                  Path.home() / ".basetime-geheim" / "wachtwoorden.local.json")
-BASIS_URL = os.environ.get("DASHBOARD_BASIS_URL") or "https://monitoring.nepocon.nl/"
+BASIS_URL = os.environ.get("DASHBOARD_BASIS_URL") or "https://argeo.nl/"
 MIN_WW_LENGTE = 12
 CODE_LENGTE = 12
 
