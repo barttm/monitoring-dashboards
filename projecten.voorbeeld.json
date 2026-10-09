@@ -1,0 +1,20 @@
+{
+  "_uitleg": "Kopieer naar projecten.json (staat NIET in git) en vul in. slug = korte naam in de link (kleine letters). code = onraadbare linkcode (python build.py --maak-codes). type = zetting | gnss. bron.project = naam exact zoals in de Basetime API (python basetime_api.py projecten). De inhoud gaat als GitHub Secret PROJECTEN_JSON online (zet-secrets.ps1).",
+  "projecten": [
+    {
+      "slug": "voorbeeld-zakbaken",
+      "naam": "Projectnaam zoals op het dashboard",
+      "type": "zetting",
+      "bron": {"type": "api", "project": "Naam in Basetime"},
+      "opties": {"MAX_GAT_DAGEN": 3,
+                 "VERSTORINGEN": {"ZB9": {"herstart": "2026-02-24", "label": "ZB9 verstoord\nmonitoring hervat"}}}
+    },
+    {
+      "slug": "voorbeeld-gnss",
+      "naam": "Projectnaam zoals op het dashboard",
+      "type": "gnss",
+      "bron": {"type": "api", "project": "Naam in Basetime"},
+      "opties": {"vanaf": "2026-01-01 00:00"}
+    }
+  ]
+}

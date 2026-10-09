@@ -1,0 +1,18 @@
+# Nooit in git: meetdata, gebouwde site, wachtwoorden en sleutels
+data/
+site/
+wachtwoorden.local.json
+.env
+*.env
+__pycache__/
+*.pyc
+# Extra vangnet: sleutel- en exportbestanden nooit committen
+*accessKeys*
+*credentials*
+*.csv
+*.xlsx
+*.pem
+*.key
+
+# Projectconfiguratie (namen + linkcodes) is vertrouwelijk -> GitHub Secret PROJECTEN_JSON
+projecten.json

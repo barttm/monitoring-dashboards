@@ -1,0 +1,52 @@
+name: Dashboards bouwen en publiceren
+
+on:
+  schedule:
+    - cron: "0 4 * * *"      # dagelijks 04:00 UTC (= 06:00 zomertijd / 05:00 wintertijd)
+  workflow_dispatch:          # handmatig starten via tabblad Actions -> Run workflow
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Afhankelijkheden
+        run: pip install -r requirements.txt
+
+      - name: Dashboards bouwen en versleutelen
+        env:
+          # Geheimen alleen via GitHub Secrets; GitHub maskeert ze in de logs.
+          BASETIME_ACCESS_KEY_ID: ${{ secrets.BASETIME_ACCESS_KEY_ID }}
+          BASETIME_SECRET_ACCESS_KEY: ${{ secrets.BASETIME_SECRET_ACCESS_KEY }}
+          DASHBOARD_WACHTWOORDEN: ${{ secrets.DASHBOARD_WACHTWOORDEN }}
+          PROJECTEN_JSON: ${{ secrets.PROJECTEN_JSON }}
+        run: python build.py
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
