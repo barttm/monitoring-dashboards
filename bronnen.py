@@ -11,6 +11,7 @@ SECURITY: sleutels alleen via omgevingsvariabelen (zie basetime_api.py); nooit p
 """
 
 import base64
+import re
 import time
 from pathlib import Path
 
@@ -63,6 +64,8 @@ def haal_api(projectnaam, punten=None):
             raise api.ApiFout("Project '%s' niet beschikbaar voor deze API-sleutel." % projectnaam)
         punten = alle[projectnaam]
     punten = [p for p in dict.fromkeys(punten) if not p.lower().startswith(OVERSLAAN)]
+    # Vaste, natuurlijke volgorde (ZB2 voor ZB10, D3 voor D6), los van de volgorde in de API
+    punten.sort(key=lambda s: [int(x) if x.isdigit() else x.lower() for x in re.split(r"(\d+)", s)])
     uit = {}
     for p in punten:
         js = _met_herhaling(api.data, projectnaam, p)
