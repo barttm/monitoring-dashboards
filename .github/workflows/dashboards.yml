@@ -35,6 +35,7 @@ jobs:
           BASETIME_SECRET_ACCESS_KEY: ${{ secrets.BASETIME_SECRET_ACCESS_KEY }}
           DASHBOARD_WACHTWOORDEN: ${{ secrets.DASHBOARD_WACHTWOORDEN }}
           PROJECTEN_JSON: ${{ secrets.PROJECTEN_JSON }}
+          DATA_SLEUTEL: ${{ secrets.DATA_SLEUTEL }}
         run: python build.py
 
       - uses: actions/upload-pages-artifact@v3

@@ -10,6 +10,7 @@ Bron-typen (in projecten.json -> "bron"):
 SECURITY: sleutels alleen via omgevingsvariabelen (zie basetime_api.py); nooit printen of opslaan.
 """
 
+import base64
 import time
 from pathlib import Path
 
@@ -17,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 import basetime_api as api
+import noodbron
 
 OVERSLAAN = ("base",)          # referentie-/basisstations niet als meetpunt tonen
 POGINGEN = 3
@@ -30,7 +32,15 @@ def haal_ruwe_data(project, basis):
             raise FileNotFoundError("Excel-bron niet gevonden: %s" % bron["pad"])
         return pd.read_excel(pad, header=None)
     if bron["type"] == "api":
-        metingen = haal_api(bron["project"], bron.get("punten"))
+        try:
+            metingen = haal_api(bron["project"], bron.get("punten"))
+        except api.ApiFout:
+            # API-storing: val terug op de versleutelde handmatige export (noodbron.py), als die er is
+            reserve = noodbron.lees(project)
+            if reserve is None:
+                raise
+            project["_bron"] = "noodbron"
+            return reserve
         return naar_zetting_df(metingen) if project["type"] == "zetting" else naar_gnss_df(metingen)
     raise ValueError("Onbekend brontype: %r" % bron["type"])
 
@@ -119,4 +129,9 @@ def naar_gnss_df(metingen):
 
 def geheime_waarden():
     """Waarden die nooit in de gepubliceerde site mogen staan (voor de controle in build.py)."""
-    return [v for v in api.geheime_waarden() if v and len(v) >= 6]
+    extra = []
+    try:
+        extra.append(base64.b64encode(noodbron.sleutel()).decode("ascii"))
+    except Exception:
+        pass
+    return [v for v in api.geheime_waarden() + extra if v and len(v) >= 6]

@@ -277,7 +277,8 @@ def main():
         assert versleutel.ontsleutel(blob, ww[p["slug"]]) == dashboard
         pagina = versleutel.login_pagina(blob, htmlmod.escape(p["naam"]), p["slug"], logo_html())
         (doel / "index.html").write_text(pagina, encoding="utf-8")
-        log(i, len(projecten), p, "ok (%s kB)" % format(len(pagina) // 1024, ","))
+        log(i, len(projecten), p, "ok (%s kB)%s" % (format(len(pagina) // 1024, ","),
+                                               " - noodbron (API-storing)" if p.get("_bron") else ""))
 
     if mislukt == len(projecten):
         sys.exit("Alle projecten mislukt - niets gepubliceerd.")

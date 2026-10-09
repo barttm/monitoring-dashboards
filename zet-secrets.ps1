@@ -62,6 +62,10 @@ $cfg = Get-Content (Join-Path $PSScriptRoot "projecten.json") -Raw
 $cfg | & $gh secret set PROJECTEN_JSON -R $Repo
 Write-Host "PROJECTEN_JSON gezet."
 
+# Sleutel voor versleutelde noodbronnen (handmatige exports, zie noodbron.py)
+$dsPad = Join-Path $geheim "data_sleutel.txt"
+if (Test-Path $dsPad) { (Get-Content $dsPad -Raw).Trim() | & $gh secret set DATA_SLEUTEL -R $Repo; Write-Host "DATA_SLEUTEL gezet." }
+
 Write-Host ""
 Write-Host "Deelbare links (per opdrachtgever los versturen, wachtwoord apart delen):"
 $basis = "https://" + $Domein + "/"
