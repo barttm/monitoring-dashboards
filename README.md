@@ -50,7 +50,8 @@ Beheer:
   `%LOCALAPPDATA%\Packages\PythonSoftwareFoundation...\LocalCache\Local\`).
 
 ## Online (eenmalig ingericht)
-Repository `barttm/monitoring-dashboards`, Pages via GitHub Actions. Secrets zetten / bijwerken:
+Repository `barttm/monitoring-dashboards`, Pages via GitHub Actions, eigen domein **https://monitoring.nepocon.nl**
+(DNS bij Shock Media: `monitoring` CNAME `barttm.github.io.`; in de links staat geen GitHub-naam). Secrets zetten / bijwerken:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\zet-secrets.ps1
 ```

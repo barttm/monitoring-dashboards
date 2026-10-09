@@ -14,6 +14,7 @@
 
 param(
     [string]$Repo = "barttm/monitoring-dashboards",
+    [string]$Domein = "monitoring.nepocon.nl",
     [switch]$AlleenWachtwoorden,
     [string[]]$Vernieuw = @()
 )
@@ -63,7 +64,7 @@ Write-Host "PROJECTEN_JSON gezet."
 
 Write-Host ""
 Write-Host "Deelbare links (per opdrachtgever los versturen, wachtwoord apart delen):"
-$basis = "https://" + $Repo.Split("/")[0] + ".github.io/" + $Repo.Split("/")[1] + "/"
+$basis = "https://" + $Domein + "/"
 (ConvertFrom-Json $cfg).projecten | ForEach-Object { Write-Host ("  {0,-22} {1}{2}-{3}/" -f $_.slug, $basis, $_.slug, $_.code) }
 Write-Host ""
 Write-Host "Wachtwoorden staan lokaal in: $wwPad  (niet in SharePoint zetten)"
