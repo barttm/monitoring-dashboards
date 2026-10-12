@@ -16,3 +16,10 @@ __pycache__/
 
 # Projectconfiguratie (namen + linkcodes) is vertrouwelijk -> GitHub Secret PROJECTEN_JSON
 projecten.json
+
+# Nooit wachtwoord-/linkoverzichten in git
+*wachtwoord*
+*wachtwoorden*
+links-en-*
+*.txt
+!requirements.txt
