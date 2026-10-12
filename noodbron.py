@@ -9,7 +9,9 @@ API voor dat project faalt (bv. HTTP 502). Zodra de API weer werkt, wordt automa
 
 Gebruik:
     python noodbron.py <slug> <pad\naar\export.xlsx>      # versleutelen en klaarzetten
+    python noodbron.py <slug> --nieuwste                   # nieuwste export van dit project uit Downloads
     python noodbron.py <slug> --wis                        # noodbron van project verwijderen
+Alles in één keer (versleutelen, pushen, online zetten):  noodbron-bijwerken.ps1 -Slug <slug>
 Daarna committen en pushen.
 """
 
@@ -52,6 +54,24 @@ def lees(project):
     return pd.read_excel(io.BytesIO(xlsx), header=None)
 
 
+def nieuwste_export(project):
+    """Nieuwste Basetime-export in Downloads die bij dit project hoort (projectnaam staat in cel A1)."""
+    import pandas as pd
+    naam = project["bron"].get("project") or project["naam"]
+    kandidaten = sorted(Path.home().joinpath("Downloads").glob("Result*_of_*.xlsx"),
+                        key=lambda p: p.stat().st_mtime, reverse=True)
+    for k in kandidaten[:25]:
+        try:
+            df = pd.read_excel(k, header=None)
+        except Exception:
+            continue
+        if naam.lower() in str(df.iat[0, 0]).replace("\xa0", " ").lower():
+            t = pd.to_datetime(df.iloc[5:, 0], errors="coerce").dropna()
+            print("Export gevonden: %s  (metingen %s t/m %s)" % (k.name, t.min().date(), t.max().date()))
+            return k
+    sys.exit("Geen export van dit project gevonden in Downloads. Exporteer eerst in Basetime (einddatum vandaag).")
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__)
@@ -65,7 +85,17 @@ def main():
         pad.unlink(missing_ok=True)
         print("Noodbron verwijderd voor %s" % slug)
         return
+    if arg == "--nieuwste":
+        arg = nieuwste_export(project)
     data = Path(arg).read_bytes()
+    if pad.exists():
+        oud = pad.read_bytes()
+        try:
+            if AESGCM(sleutel()).decrypt(oud[:12], oud[12:], slug.encode()) == data:
+                print("Deze export staat al klaar als noodbron (geen wijziging).")
+                return
+        except Exception:
+            pass
     MAP.mkdir(exist_ok=True)
     iv = os.urandom(12)
     pad.write_bytes(iv + AESGCM(sleutel(maak=True)).encrypt(iv, data, slug.encode()))
