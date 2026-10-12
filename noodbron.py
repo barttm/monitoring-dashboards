@@ -5,12 +5,12 @@ Versleutelde reservebron per project: een handmatige Basetime Excel-export die w
 API voor dat project faalt (bv. HTTP 502). Zodra de API weer werkt, wordt automatisch live data gebruikt.
 
   - Bestand in de repo: noodbron/<neutrale naam>.enc  (AES-256-GCM; naam verraadt het project niet)
-  - Sleutel: GitHub Secret DATA_SLEUTEL / lokaal %USERPROFILE%\.basetime-geheim\data_sleutel.txt
+  - Sleutel: afgeleid van de Basetime secret access key (geen extra geheim nodig)
 
 Gebruik:
     python noodbron.py <slug> <pad\naar\export.xlsx>      # versleutelen en klaarzetten
     python noodbron.py <slug> --wis                        # noodbron van project verwijderen
-Daarna committen en pushen (zet-secrets.ps1 zet DATA_SLEUTEL online).
+Daarna committen en pushen.
 """
 
 import base64
@@ -25,21 +25,15 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 BASIS = Path(__file__).resolve().parent
 MAP = BASIS / "noodbron"
-SLEUTEL_PAD = Path.home() / ".basetime-geheim" / "data_sleutel.txt"
+sys.path.insert(0, str(BASIS))
 
 
 def sleutel(maak=False):
-    if os.environ.get("DATA_SLEUTEL"):
-        return base64.b64decode(os.environ["DATA_SLEUTEL"].strip())
-    if SLEUTEL_PAD.exists():
-        return base64.b64decode(SLEUTEL_PAD.read_text().strip())
-    if not maak:
-        raise RuntimeError("Geen DATA_SLEUTEL beschikbaar")
-    SLEUTEL_PAD.parent.mkdir(parents=True, exist_ok=True)
-    k = AESGCM.generate_key(bit_length=256)
-    SLEUTEL_PAD.write_text(base64.b64encode(k).decode("ascii"))
-    print("Nieuwe datasleutel aangemaakt in %s" % SLEUTEL_PAD)
-    return k
+    """AES-sleutel voor de noodbron: afgeleid van de Basetime secret access key (staat al als GitHub Secret
+    en lokaal in de geheime map), zodat er geen extra geheim beheerd hoeft te worden."""
+    import basetime_api
+    _, geheim = basetime_api._sleutels()
+    return hashlib.sha256(("nepocon-noodbron:" + geheim).encode("utf-8")).digest()
 
 
 def bestandsnaam(project):

@@ -10,7 +10,6 @@ Bron-typen (in projecten.json -> "bron"):
 SECURITY: sleutels alleen via omgevingsvariabelen (zie basetime_api.py); nooit printen of opslaan.
 """
 
-import base64
 import re
 import time
 from pathlib import Path
@@ -132,9 +131,4 @@ def naar_gnss_df(metingen):
 
 def geheime_waarden():
     """Waarden die nooit in de gepubliceerde site mogen staan (voor de controle in build.py)."""
-    extra = []
-    try:
-        extra.append(base64.b64encode(noodbron.sleutel()).decode("ascii"))
-    except Exception:
-        pass
-    return [v for v in api.geheime_waarden() + extra if v and len(v) >= 6]
+    return [v for v in api.geheime_waarden() if v and len(v) >= 6]
