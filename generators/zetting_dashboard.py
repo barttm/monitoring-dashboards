@@ -66,6 +66,11 @@ VERSTORINGEN = {}
 # Ongeldige maaiveldmeting: radar >= RADAR_MAX (Basetime zet Soil Level dan gelijk aan Groundplate)
 RADAR_MAX = 2.0
 
+# Losse uitschieters (meetfout, bv. zakbaak tijdelijk uit het lood): een dagwaarde die meer dan deze
+# afstand [m] afwijkt van de mediaan van de omliggende dagen wordt weggelaten en op het kaartje gemeld.
+UITSCHIETER_PLAAT_M = 0.15
+UITSCHIETER_MAAIVELD_M = 0.40
+
 # Grafiek: ontbrekende dagen tot en met dit aantal worden met een lijn overbrugd
 MAX_GAT_DAGEN = 3
 
@@ -102,6 +107,13 @@ def vind_blokken(df):
         n = (df.shape[1] - 1) // BLOK_BREEDTE
         blokken = [("ZB%d" % (i + 1), 1 + i * BLOK_BREEDTE) for i in range(n)]
     return blokken
+
+
+def uitschieters(reeks, drempel):
+    """True voor losse pieken: afwijking t.o.v. de mediaan van 5 omliggende dagwaarden > drempel.
+    Een blijvende sprong (echte zetting of ophoging) volgt de mediaan en wordt dus niet weggefilterd."""
+    med = reeks.rolling(5, center=True, min_periods=3).median()
+    return ((reeks - med).abs() > drempel).fillna(False)
 
 
 def lees_data(pad):
@@ -146,10 +158,17 @@ def lees_data(pad):
         d = d.groupby("dag", as_index=False)[["soil", "plate", "rod"]].mean()
         d = d.sort_values("dag").reset_index(drop=True)
 
+        fout_plaat = uitschieters(d["plate"], UITSCHIETER_PLAAT_M)
+        fout_veld = uitschieters(d["soil"], UITSCHIETER_MAAIVELD_M) | fout_plaat
+        weg = sorted(d.loc[fout_plaat, "dag"])
+        d.loc[fout_plaat, "plate"] = np.nan
+        d.loc[fout_veld, "soil"] = np.nan
+
         if naam in VERSTORINGEN:
             d = d[d["dag"] >= VERSTORINGEN[naam]["herstart"]].reset_index(drop=True)
         if not d.empty:
             d.attrs["pos"] = pos
+            d.attrs["uitschieters"] = [x for x in weg if x >= d["dag"].iloc[0]]
             resultaat[naam] = d
     return resultaat
 
@@ -190,6 +209,7 @@ def stats(naam, d):
         "eerste_datum": d["dag"].iloc[0],
         "laatste_datum": d["dag"].iloc[-1],
         "n_metingen": int(len(d)),
+        "uitschieters": list(d.attrs.get("uitschieters", [])),
     }
 
 
@@ -638,6 +658,10 @@ function buildStats() {
       '<div class="sc-nap">Plaat: ' + fmt(d.gplate_start, 3) + ' → ' + fmt(d.gplate_huidig, 3) + '<br>m+NAP</div>' +
       '<div class="sc-per">' + d.eerste_datum + ' –<br>' + d.laatste_datum + '</div>' +
       '<div class="sc-opm" data-edit="opm-' + z + '" data-ph="Opmerking toevoegen..."></div>';
+    if (d.uitschieters && d.uitschieters.length) {
+      html += '<div class="sc-warn" title="Losse meetfout (bv. zakbaak tijdelijk uit het lood); niet meegenomen in grafiek en zetting">' +
+        '\u26A0 meetfout weggelaten: ' + d.uitschieters.map(function(x){ return nlDatum(x).slice(0, 5); }).join(', ') + '</div>';
+    }
     if (D.verstoringen[z]) {
       html += '<div class="sc-warn">⚠ verstoord vóór ' + nlDatum(D.verstoringen[z].herstart) + '</div>';
     }
