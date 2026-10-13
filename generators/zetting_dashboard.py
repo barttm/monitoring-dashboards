@@ -125,6 +125,14 @@ def lees_data(pad):
             "plate": kol("plate"),
             "rod": kol("rod"),
         })
+        # Locatie (RD): mediaan van alle metingen, voor het locatieoverzicht
+        oost, noord = kol("easting"), kol("northing")
+        pos = None
+        if np.isfinite(oost).any() and np.isfinite(noord).any():
+            e, n = float(np.nanmedian(oost)), float(np.nanmedian(noord))
+            if e > 0 and n > 0:
+                pos = [round(e, 2), round(n, 2)]
+
         # Ongeldige radarmeting -> maaiveld onbekend (grondplaat blijft geldig)
         radar = kol("radar")
         ongeldig = (radar >= RADAR_MAX) | np.isclose(d["soil"].values, d["plate"].values)
@@ -141,6 +149,7 @@ def lees_data(pad):
         if naam in VERSTORINGEN:
             d = d[d["dag"] >= VERSTORINGEN[naam]["herstart"]].reset_index(drop=True)
         if not d.empty:
+            d.attrs["pos"] = pos
             resultaat[naam] = d
     return resultaat
 
@@ -223,6 +232,7 @@ def bouw_payload(data, project):
             } for z in zbs
         },
         "stats": alle_st,
+        "pos": {z: data[z].attrs["pos"] for z in zbs if data[z].attrs.get("pos")},
         "verstoringen": {z: v for z, v in VERSTORINGEN.items() if z in data},
     }
 
@@ -312,6 +322,18 @@ main { padding: 20px 20px; min-width: 0; }
 .legend i { display: inline-block; width: 20px; border-top: 2px solid; }
 .legend i.dash { border-top-style: dashed; }
 .cbox { position: relative; height: 300px; }
+
+/* Locatieoverzicht (bovenaanzicht) naast de grafieken */
+.grid2 { display: grid; grid-template-columns: minmax(340px, 480px) 1fr; gap: 16px; align-items: start; }
+.grid2 > div { min-width: 0; }
+.grid2.nomap { grid-template-columns: 1fr; }
+.mapwrap { position: sticky; top: 12px; }
+#map { width: 100%; aspect-ratio: 1 / 1; display: block; background: #eef1f5; border-radius: 3px; cursor: grab; touch-action: none; }
+#map.drag { cursor: grabbing; }
+.maplbl { font-family: var(--mono); font-weight: 700; paint-order: stroke; stroke: #fff; stroke-linejoin: round; }
+.mapsel { font-family: var(--sans); font-size: 11px; padding: 4px 6px; border: 1px solid var(--lijn); border-radius: 3px; background: #fff; color: var(--tekst); }
+.maphint { font-size: 10px; color: var(--grijs); margin-top: 8px; line-height: 1.45; }
+@media (max-width: 1200px) { .grid2 { grid-template-columns: 1fr; } .mapwrap { position: static; } }
 .hidden { display: none !important; }
 
 /* Bewerkmodus: teksten en opmerkingen aanpassen in de browser, opslaan in dit HTML-bestand */
@@ -378,6 +400,19 @@ body.edit .sc-opm:empty { display: block; }
       <div class="ph"><h2>Opmerkingen</h2></div>
       <div class="opm-tekst" data-edit="opmerkingen" data-ph="Algemene opmerkingen of toelichting typen..."></div>
     </div>
+    <div class="grid2" id="grid2">
+      <div class="mapwrap" id="mapwrap">
+        <div class="panel">
+          <div class="ph">
+            <div><h2>Locatieoverzicht zakbaken</h2><div class="psub">Bovenaanzicht, RD-co&ouml;rdinaten (EPSG:28992)</div></div>
+            <select class="mapsel" id="sel-bg"><option value="lucht">Luchtfoto</option><option value="brt">Topografisch</option><option value="geen">Geen</option></select>
+          </div>
+          <svg id="map"></svg>
+          <div class="maphint">Scroll = zoomen &middot; slepen = verschuiven &middot; dubbelklik = reset &middot; klik op een zakbaak = aan/uit.
+            Label = zetting grondplaat totaal. Achtergrond: PDOK.</div>
+        </div>
+      </div>
+      <div>
     <div class="panel" id="panel-nap">
       <div class="ph">
         <div>
@@ -400,6 +435,8 @@ body.edit .sc-opm:empty { display: block; }
         <div class="legend"><span><i style="border-color:#D62728"></i>Zetting (mm)</span></div>
       </div>
       <div class="cbox"><canvas id="cZet"></canvas></div>
+    </div>
+      </div>
     </div>
   </main>
 </div>
@@ -560,6 +597,7 @@ function kleurZB(z) {
   card.classList.toggle('on', on);
   card.style.borderColor = on ? c : '';
   card.style.boxShadow = on ? 'inset 0 3px 0 ' + c : 'none';
+  if (mapKlaar) { drawMapPts(); }
 }
 
 function toggleZB(z) {
@@ -623,6 +661,117 @@ document.getElementById('tgl-zetting').addEventListener('click', function() {
 });
 document.getElementById('btn-sel-all').addEventListener('click', function() { setAll(true); });
 document.getElementById('btn-desel-all').addEventListener('click', function() { setAll(false); });
+
+// ── Locatieoverzicht (bovenaanzicht) ─────────
+var NS = 'http://www.w3.org/2000/svg', MS = 600, mapKlaar = false;
+var mapSvg, mapG, bgG, ptG, scaleG, mE0, mN0, mSpan, vk = 1, vx = 0, vy = 0, dragMoved = false;
+var RD = { ox: -285401.92, oy: 903401.92, r0: 3440.64 };
+var BG = {
+  lucht: { url: 'https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_orthoHR/EPSG:28992/', ext: '.jpeg', z: 14 },
+  brt:   { url: 'https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:28992/', ext: '.png', z: 14 }
+};
+function sEl(n, a, parent) {
+  var e = document.createElementNS(NS, n);
+  for (var k in a) { e.setAttribute(k, a[k]); }
+  if (parent) { parent.appendChild(e); }
+  return e;
+}
+function mX(e) { return (e - mE0) / mSpan * MS; }
+function mY(n) { return MS - (n - mN0) / mSpan * MS; }
+
+function setupMap() {
+  var zs = ZBS.filter(function(z){ return D.pos && D.pos[z]; });
+  if (!zs.length) {
+    document.getElementById('mapwrap').classList.add('hidden');
+    document.getElementById('grid2').classList.add('nomap');
+    return;
+  }
+  var es = zs.map(function(z){ return D.pos[z][0]; }), ns = zs.map(function(z){ return D.pos[z][1]; });
+  var e0 = Math.min.apply(null, es), e1 = Math.max.apply(null, es), n0 = Math.min.apply(null, ns), n1 = Math.max.apply(null, ns);
+  var half = Math.max(Math.max(e1 - e0, n1 - n0) / 2 + 25, 40);
+  mSpan = 2 * half; mE0 = (e0 + e1) / 2 - half; mN0 = (n0 + n1) / 2 - half;
+  mapSvg = document.getElementById('map');
+  mapSvg.setAttribute('viewBox', '0 0 ' + MS + ' ' + MS);
+  mapG = sEl('g', {}, mapSvg); bgG = sEl('g', {}, mapG); ptG = sEl('g', {}, mapG);
+  scaleG = sEl('g', { transform: 'translate(14,' + (MS - 18) + ')' }, mapSvg);
+  var na = sEl('g', { transform: 'translate(' + (MS - 26) + ',30)' }, mapSvg);
+  sEl('path', { d: 'M0,-18 L7,4 L0,0 L-7,4 Z', fill: '#1a2233', stroke: '#fff', 'stroke-width': 1.5 }, na);
+  sEl('text', { y: 18, 'text-anchor': 'middle', 'class': 'maplbl', 'font-size': 12, 'stroke-width': 3 }, na).textContent = 'N';
+
+  function svgPt(ev) { var r = mapSvg.getBoundingClientRect(); return [(ev.clientX - r.left) / r.width * MS, (ev.clientY - r.top) / r.height * MS]; }
+  mapSvg.addEventListener('wheel', function(ev){
+    ev.preventDefault();
+    var p = svgPt(ev), nk = Math.max(0.5, Math.min(40, vk * (ev.deltaY < 0 ? 1.25 : 0.8)));
+    vx = p[0] - (p[0] - vx) * nk / vk; vy = p[1] - (p[1] - vy) * nk / vk; vk = nk; applyView();
+  }, { passive: false });
+  var start = null;
+  mapSvg.addEventListener('pointerdown', function(ev){ start = svgPt(ev); dragMoved = false; });
+  window.addEventListener('pointermove', function(ev){
+    if (!start) return;
+    var p = svgPt(ev), dx = p[0] - start[0], dy = p[1] - start[1];
+    if (!dragMoved && Math.abs(dx) + Math.abs(dy) < 4) return;
+    dragMoved = true; mapSvg.classList.add('drag');
+    vx += dx; vy += dy; start = p; applyView(true);
+  });
+  window.addEventListener('pointerup', function(){ start = null; mapSvg.classList.remove('drag'); });
+  mapSvg.addEventListener('dblclick', function(){ vk = 1; vx = 0; vy = 0; applyView(); });
+  document.getElementById('sel-bg').addEventListener('change', drawBg);
+  mapKlaar = true;
+  drawBg(); applyView();
+}
+
+function applyView(alleenSchuiven) {
+  mapG.setAttribute('transform', 'translate(' + vx + ',' + vy + ') scale(' + vk + ')');
+  if (!alleenSchuiven) { drawMapPts(); drawScale(); }
+}
+
+function drawBg() {
+  while (bgG.firstChild) { bgG.removeChild(bgG.firstChild); }
+  var key = document.getElementById('sel-bg').value;
+  if (key === 'geen') {
+    for (var e = Math.ceil(mE0 / 10) * 10; e < mE0 + mSpan; e += 10) sEl('line', { x1: mX(e), x2: mX(e), y1: 0, y2: MS, stroke: '#dfe4ec' }, bgG);
+    for (var n = Math.ceil(mN0 / 10) * 10; n < mN0 + mSpan; n += 10) sEl('line', { y1: mY(n), y2: mY(n), x1: 0, x2: MS, stroke: '#dfe4ec' }, bgG);
+    return;
+  }
+  var L = BG[key], ts = RD.r0 / Math.pow(2, L.z) * 256, marge = 60;
+  var c0 = Math.floor((mE0 - marge - RD.ox) / ts), c1 = Math.floor((mE0 + mSpan + marge - RD.ox) / ts);
+  var r0 = Math.floor((RD.oy - (mN0 + mSpan + marge)) / ts), r1 = Math.floor((RD.oy - (mN0 - marge)) / ts);
+  for (var c = c0; c <= c1; c++) for (var r = r0; r <= r1; r++) {
+    var te = RD.ox + c * ts, tn = RD.oy - r * ts;
+    sEl('image', { href: L.url + L.z + '/' + c + '/' + r + L.ext, x: mX(te), y: mY(tn),
+      width: mX(te + ts) - mX(te) + 0.5, height: mY(tn - ts) - mY(tn) + 0.5, preserveAspectRatio: 'none' }, bgG);
+  }
+}
+
+function drawScale() {
+  while (scaleG.firstChild) { scaleG.removeChild(scaleG.firstChild); }
+  var mpp = mSpan / MS / vk, doel = 110 * mpp, nice = 1;
+  [1, 2, 5, 10, 20, 25, 50, 100, 200, 500].forEach(function(v){ if (v <= doel) nice = v; });
+  var px = nice / mpp;
+  sEl('rect', { x: -6, y: -16, width: px + 44, height: 24, fill: '#fff', 'fill-opacity': 0.85, rx: 3 }, scaleG);
+  sEl('path', { d: 'M0,-4 V0 H' + px + ' V-4', fill: 'none', stroke: '#1a2233', 'stroke-width': 1.5 }, scaleG);
+  sEl('text', { x: px + 6, y: 1, 'font-family': 'Consolas, monospace', 'font-size': 11 }, scaleG).textContent = nice + ' m';
+}
+
+function drawMapPts() {
+  while (ptG.firstChild) { ptG.removeChild(ptG.firstChild); }
+  var k = vk;
+  // eerst uitgeschakelde, dan actieve zakbaken (actieve liggen bovenop)
+  ZBS.slice().sort(function(a, b){ return (activeZBs[a] ? 1 : 0) - (activeZBs[b] ? 1 : 0); }).forEach(function(z){
+    if (!D.pos[z]) return;
+    var on = activeZBs[z], c = D.colors[z], x = mX(D.pos[z][0]), y = mY(D.pos[z][1]), v = D.stats[z].zet_totaal_mm;
+    var g = sEl('g', { style: 'cursor:pointer;opacity:' + (on ? 1 : 0.55) }, ptG);
+    sEl('circle', { cx: x, cy: y, r: 6.5 / k, fill: on ? c : '#fff', stroke: on ? '#fff' : c, 'stroke-width': 2 / k }, g);
+    sEl('text', { x: x + 9 / k, y: y - 4 / k, 'class': 'maplbl', 'font-size': 11.5 / k, 'stroke-width': 3 / k, fill: c }, g).textContent = z;
+    if (on && v !== null) {
+      sEl('text', { x: x + 9 / k, y: y + 8 / k, 'class': 'maplbl', 'font-size': 10 / k, 'stroke-width': 3 / k,
+        fill: v < 0 ? '#D62728' : '#1f5fbf' }, g).textContent = fmt(v, 0) + ' mm';
+    }
+    sEl('title', {}, g).textContent = z + ' | E ' + D.pos[z][0].toFixed(2) + '  N ' + D.pos[z][1].toFixed(2) +
+      ' | zetting ' + fmt(v, 0) + ' mm | plaat ' + fmt(D.stats[z].gplate_huidig, 3) + ' m+NAP';
+    g.addEventListener('click', function(){ if (!dragMoved && !editMode) { toggleZB(z); } });
+  });
+}
 
 // ── Bewerkmodus ──────────────────────────────
 var editMode = false, dirty = false;
@@ -728,6 +877,7 @@ buildStats();
 ZBS.forEach(kleurZB);
 applyEdits();
 initCharts();
+setupMap();
 </script>
 </body>
 </html>
