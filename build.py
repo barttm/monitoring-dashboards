@@ -141,6 +141,10 @@ def bouw_zetting(p, ruw):
 def bouw_gnss(p, ruw):
     vanaf = p.get("opties", {}).get("vanaf", "1900-01-01 00:00")
     punten = gd.lees_data(ruw, vanaf)
+    # Punten zonder enkele geldige meting (bv. net geplaatst) nog niet tonen
+    punten = [q for q in punten if not q["df"].dropna(subset=["E", "N", "H"]).empty]
+    if not punten:
+        raise RuntimeError("geen GNSS-data gevonden")
     return gd.bouw_html(gd.bouw_payload(punten, p["naam"], vanaf), LOGO)
 
 
