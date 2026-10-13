@@ -67,7 +67,12 @@ def haal_api(projectnaam, punten=None):
     punten.sort(key=lambda s: [int(x) if x.isdigit() else x.lower() for x in re.split(r"(\d+)", s)])
     uit = {}
     for p in punten:
-        js = _met_herhaling(api.data, projectnaam, p)
+        try:
+            js = _met_herhaling(api.data, projectnaam, p)
+        except api.ApiFout as e:
+            if "No measurements available" in str(e):   # punt zonder metingen: overslaan, niet het hele project
+                continue
+            raise
         uit[p] = js.get("Measurements") or {}
     if not any(uit.values()):
         raise api.ApiFout("Geen metingen ontvangen voor '%s'." % projectnaam)
