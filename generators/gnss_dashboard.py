@@ -356,17 +356,19 @@ function buildCards() {
   var box = d3.select('#stats').html('');
   P.forEach(function(p){
     var li = lastIdx(p.H), rawH = S[p.id].H.raw;
-    var sd = std(rawH);
+    // Verplaatst punt: spreiding alleen over de nieuwe plek (die bepaalt de huidige meetkwaliteit)
+    var vanafV = p.verplaatst ? parse(p.verplaatst.t) : null;
+    var sd = std(vanafV ? rawH.map(function(v, i){ return T[i] >= vanafV ? v : null; }) : rawH);
     var html = '<div class="c-name" style="color:' + p.kleur + '">' + p.kort + '</div><div class="c-id">' + p.id + '</div>';
     [['H', 'hoogte'], ['E', 'easting'], ['N', 'northing']].forEach(function(cc){
       var a = cur(p.id, cc[0]), v = a[lastIdx(a)];
       html += '<div class="c-row"><span>&Delta; ' + cc[1] + '</span><b class="' + cls(v) + '">' + sgn(v, 0) + '<span class="u">mm</span></b></div>';
     });
-    html += '<div class="c-foot">spreiding hoogte &sigma; ' + (sd === null ? '--' : sd.toFixed(0)) + ' mm<br>laatste: ' +
+    html += '<div class="c-foot">spreiding hoogte &sigma; ' + (sd === null ? '--' : sd.toFixed(0)) + ' mm' + (vanafV ? ' (sinds verplaatsing)' : '') + '<br>laatste: ' +
       (li >= 0 ? fmtT(T[li]) : '--') + '<br>' + p.H.filter(function(x){ return x !== null; }).length + ' metingen' + '</div>';
     if (p.verplaatst) {
       var vt = p.verplaatst.t, sp = p.verplaatst.sprong_mm;
-      html += '<div class="c-warn" title="Sprong door verplaatsing gecorrigeerd: dH ' + sp.H + ' / dE ' + sp.E + ' / dN ' + sp.N + ' mm">' +
+      html += '<div class="c-foot" title="Sprong door verplaatsing gecorrigeerd: dH ' + sp.H + ' / dE ' + sp.E + ' / dN ' + sp.N + ' mm">' +
         '\u2194 verplaatst ' + vt.slice(8, 10) + '-' + vt.slice(5, 7) + ' ' + vt.slice(11) + ' UTC &ndash; sprong gecorrigeerd</div>';
     }
     if (sd !== null && sd > 20) { html += '<div class="c-warn">⚠ grote spreiding &ndash; gebruik gemiddelde</div>'; }
