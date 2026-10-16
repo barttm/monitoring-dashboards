@@ -36,6 +36,11 @@ OUTPUT_HTML = "gnss_dashboard.html"
 LOGO_PAD = "nepocon_logo.png"
 PROJECTNAAM = "Projectnaam"
 
+# Fysiek verplaatste punten: {"puntnaam": "YYYY-MM-DD HH:MM" (UTC, moment tussen laatste meting oude plek en
+# eerste meting nieuwe plek)}. De sprong (mediaan 48 u voor vs 24 u na) wordt vanaf dat moment afgetrokken,
+# zodat de reeks doorloopt - zoals Basetime de nulmeting aanpast.
+VERPLAATSINGEN = {}
+
 VANAF = "2026-09-22 13:00"   # data hiervoor heeft een offset-fout -> weggelaten (UTC)
 DATA_STARTRIJ = 6            # eerste datarij (0-based); rij 2 = puntnamen, rij 5 = kolomkoppen
 NAAM_RIJ = 2
@@ -82,6 +87,26 @@ def schoon(v, n):
     return [None if pd.isna(x) else round(float(x), n) for x in v]
 
 
+def corrigeer_verplaatsingen(punten, verplaatsingen):
+    for p in punten:
+        moment = verplaatsingen.get(p["id"]) or verplaatsingen.get(p["kort"])
+        if not moment:
+            continue
+        t0 = pd.Timestamp(moment)
+        d = p["df"]
+        voor = d[(d["t"] < t0) & (d["t"] >= t0 - pd.Timedelta(hours=48))]
+        na = d[(d["t"] >= t0) & (d["t"] < t0 + pd.Timedelta(hours=24))]
+        if voor.dropna(subset=["H"]).empty or na.dropna(subset=["H"]).empty:
+            continue
+        sprong = {}
+        for c in ("E", "N", "H"):
+            off = float(na[c].median() - voor[c].median())
+            d.loc[d["t"] >= t0, c] = d.loc[d["t"] >= t0, c] - off
+            sprong[c] = round(off * 1000)
+        p["verplaatst"] = {"t": t0.strftime("%Y-%m-%d %H:%M"), "sprong_mm": sprong}
+    return punten
+
+
 def bouw_payload(punten, project, vanaf):
     tijden = sorted(set(t for p in punten for t in p["df"]["t"]))
     T = [pd.Timestamp(t).strftime("%Y-%m-%d %H:%M") for t in tijden]
@@ -91,6 +116,7 @@ def bouw_payload(punten, project, vanaf):
         out.append({
             "id": p["id"], "kort": p["kort"], "kleur": KLEUREN[i % len(KLEUREN)],
             "E": schoon(d["E"], 4), "N": schoon(d["N"], 4), "H": schoon(d["H"], 4),
+            "verplaatst": p.get("verplaatst"),
         })
     return {"project": project, "vanaf": vanaf, "T": T, "punten": out}
 
@@ -338,6 +364,11 @@ function buildCards() {
     });
     html += '<div class="c-foot">spreiding hoogte &sigma; ' + (sd === null ? '--' : sd.toFixed(0)) + ' mm<br>laatste: ' +
       (li >= 0 ? fmtT(T[li]) : '--') + '<br>' + p.H.filter(function(x){ return x !== null; }).length + ' metingen' + '</div>';
+    if (p.verplaatst) {
+      var vt = p.verplaatst.t, sp = p.verplaatst.sprong_mm;
+      html += '<div class="c-warn" title="Sprong door verplaatsing gecorrigeerd: dH ' + sp.H + ' / dE ' + sp.E + ' / dN ' + sp.N + ' mm">' +
+        '\u2194 verplaatst ' + vt.slice(8, 10) + '-' + vt.slice(5, 7) + ' ' + vt.slice(11) + ' UTC &ndash; sprong gecorrigeerd</div>';
+    }
     if (sd !== null && sd > 20) { html += '<div class="c-warn">⚠ grote spreiding &ndash; gebruik gemiddelde</div>'; }
     box.append('div').attr('class', 'card').attr('id', 'card-' + p.kort).html(html)
       .on('click', function(){ togglePt(p.id); });
@@ -625,7 +656,7 @@ def main():
 
     if not Path(args.bestand).exists():
         sys.exit("Bestand niet gevonden: " + args.bestand)
-    punten = lees_data(args.bestand, args.vanaf)
+    punten = corrigeer_verplaatsingen(lees_data(args.bestand, args.vanaf), VERPLAATSINGEN)
     payload = bouw_payload(punten, args.project, args.vanaf)
     html = bouw_html(payload, args.logo)
     assert "`" not in html, "Backtick in HTML gevonden"
