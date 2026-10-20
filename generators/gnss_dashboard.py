@@ -119,12 +119,12 @@ def zet_baselines(punten, baselines):
         for s in segs:
             s = dict(s)
             if any(s.get(c) == "auto" for c in ("E", "N", "H")):
+                s["geschat"] = s.get("H") == "auto"      # hoogte (Difference Height) is de hoofdwaarde
                 t0 = pd.Timestamp(s["vanaf"])
                 d = p["df"][(p["df"]["t"] >= t0) & (p["df"]["t"] < t0 + pd.Timedelta(hours=24))]
                 for c in ("E", "N", "H"):
                     if s.get(c) == "auto":
                         s[c] = round(float(d[c].median()), 4)
-                s["geschat"] = True
             uit.append(s)
         p["baseline"] = uit
     return punten
@@ -260,9 +260,9 @@ main { padding: 20px; min-width: 0; }
     <div class="sb-sec">
       <h3>Weergave</h3>
       <div class="layer on" id="tgl-raw"><div class="lt"><div class="ln">Ruwe metingen</div><div class="ls">elke meting (2-uurlijks)</div></div><span class="sw"></span></div>
-      <div class="layer" id="tgl-avg"><div class="lt"><div class="ln">Voortschrijdend gemiddelde</div><div class="ls">gecentreerd venster</div></div><span class="sw"></span></div>
+      <div class="layer on" id="tgl-avg"><div class="lt"><div class="ln">Voortschrijdend gemiddelde</div><div class="ls">gecentreerd venster (6 uur = Basetime &quot;Averages&quot;)</div></div><span class="sw"></span></div>
       <div class="fld">Venster gemiddelde</div>
-      <select id="sel-win"><option value="6">6 uur</option><option value="12" selected>12 uur</option><option value="24">24 uur</option></select>
+      <select id="sel-win"><option value="6" selected>6 uur (zoals Basetime)</option><option value="12">12 uur</option><option value="24">24 uur</option></select>
       <div class="fld">Nulpunt</div>
       <select id="sel-ref"><option value="basetime" id="opt-basetime">Baseline Basetime (Difference)</option><option value="eerste">Eerste meting (__VANAF__)</option><option value="gem24">Gemiddelde eerste 24 uur</option></select>
     </div>
@@ -304,7 +304,7 @@ var T = D.T.map(parse);
 var P = D.punten;
 var act = {}; P.forEach(function(p){ act[p.id] = true; });
 var HEEFT_BASELINE = P.some(function(p){ return p.baseline && p.baseline.length; });
-var showRaw = true, showAvg = false, winH = 12, refMode = HEEFT_BASELINE ? 'basetime' : 'eerste', vfac = 500, hoverIdx = null;
+var showRaw = true, showAvg = true, winH = 6, refMode = HEEFT_BASELINE ? 'basetime' : 'eerste', vfac = 500, hoverIdx = null;
 var COMP = ['H', 'E', 'N'];
 var fmtT = d3.utcFormat('%d-%m-%Y %H:%M');
 
