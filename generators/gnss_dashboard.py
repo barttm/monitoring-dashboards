@@ -107,6 +107,29 @@ def corrigeer_verplaatsingen(punten, verplaatsingen):
     return punten
 
 
+def zet_baselines(punten, baselines):
+    """Baseline(s) per punt zoals in Basetime/Parvamoti: Difference = meting - baseline.
+    baselines = {"puntnaam": [{"vanaf": null|"YYYY-MM-DD HH:MM", "E": .., "N": .., "H": ..}, ...]}
+    Waarde "auto" = mediaan van de eerste 24 uur vanaf 'vanaf' (schatting tot de exacte waarde bekend is)."""
+    for p in punten:
+        segs = baselines.get(p["id"]) or baselines.get(p["kort"])
+        if not segs:
+            continue
+        uit = []
+        for s in segs:
+            s = dict(s)
+            if any(s.get(c) == "auto" for c in ("E", "N", "H")):
+                t0 = pd.Timestamp(s["vanaf"])
+                d = p["df"][(p["df"]["t"] >= t0) & (p["df"]["t"] < t0 + pd.Timedelta(hours=24))]
+                for c in ("E", "N", "H"):
+                    if s.get(c) == "auto":
+                        s[c] = round(float(d[c].median()), 4)
+                s["geschat"] = True
+            uit.append(s)
+        p["baseline"] = uit
+    return punten
+
+
 def bouw_payload(punten, project, vanaf):
     tijden = sorted(set(t for p in punten for t in p["df"]["t"]))
     T = [pd.Timestamp(t).strftime("%Y-%m-%d %H:%M") for t in tijden]
@@ -117,6 +140,7 @@ def bouw_payload(punten, project, vanaf):
             "id": p["id"], "kort": p["kort"], "kleur": KLEUREN[i % len(KLEUREN)],
             "E": schoon(d["E"], 4), "N": schoon(d["N"], 4), "H": schoon(d["H"], 4),
             "verplaatst": p.get("verplaatst"),
+            "baseline": p.get("baseline"),
         })
     return {"project": project, "vanaf": vanaf, "T": T, "punten": out}
 
@@ -240,7 +264,7 @@ main { padding: 20px; min-width: 0; }
       <div class="fld">Venster gemiddelde</div>
       <select id="sel-win"><option value="6">6 uur</option><option value="12" selected>12 uur</option><option value="24">24 uur</option></select>
       <div class="fld">Nulpunt</div>
-      <select id="sel-ref"><option value="eerste">Eerste meting (__VANAF__)</option><option value="gem24">Gemiddelde eerste 24 uur</option></select>
+      <select id="sel-ref"><option value="basetime" id="opt-basetime">Baseline Basetime (Difference)</option><option value="eerste">Eerste meting (__VANAF__)</option><option value="gem24">Gemiddelde eerste 24 uur</option></select>
     </div>
     <div class="sb-sec">
       <h3>Bovenaanzicht</h3>
@@ -279,7 +303,8 @@ var parse = d3.utcParse('%Y-%m-%d %H:%M');
 var T = D.T.map(parse);
 var P = D.punten;
 var act = {}; P.forEach(function(p){ act[p.id] = true; });
-var showRaw = true, showAvg = false, winH = 12, refMode = 'eerste', vfac = 500, hoverIdx = null;
+var HEEFT_BASELINE = P.some(function(p){ return p.baseline && p.baseline.length; });
+var showRaw = true, showAvg = false, winH = 12, refMode = HEEFT_BASELINE ? 'basetime' : 'eerste', vfac = 500, hoverIdx = null;
 var COMP = ['H', 'E', 'N'];
 var fmtT = d3.utcFormat('%d-%m-%Y %H:%M');
 
@@ -293,7 +318,16 @@ function refVal(arr) {
   for (var j = i0; j < arr.length && +T[j] < lim; j++) { if (arr[j] !== null) { s += arr[j]; n++; } }
   return s / n;
 }
+// Basetime-baseline die geldt op tijdstip t (laatste segment met vanaf <= t)
+function baselineOp(p, t) {
+  var b = null;
+  p.baseline.forEach(function(s){ if (!s.vanaf || t >= parse(s.vanaf)) { b = s; } });
+  return b;
+}
 function diffs(p, c) {
+  if (refMode === 'basetime' && p.baseline && p.baseline.length) {
+    return p[c].map(function(v, i){ var b = baselineOp(p, T[i]); return (v === null || !b) ? null : (v - b[c]) * 1000; });
+  }
   var r = refVal(p[c]);
   return p[c].map(function(v){ return (v === null || r === null) ? null : (v - r) * 1000; });
 }
@@ -357,7 +391,8 @@ function buildCards() {
   P.forEach(function(p){
     var li = lastIdx(p.H), rawH = S[p.id].H.raw;
     // Verplaatst punt: spreiding alleen over de nieuwe plek (die bepaalt de huidige meetkwaliteit)
-    var vanafV = p.verplaatst ? parse(p.verplaatst.t) : null;
+    var laatsteSeg = (p.baseline && p.baseline.length > 1) ? p.baseline[p.baseline.length - 1] : null;
+    var vanafV = laatsteSeg ? parse(laatsteSeg.vanaf) : (p.verplaatst ? parse(p.verplaatst.t) : null);
     var sd = std(vanafV ? rawH.map(function(v, i){ return T[i] >= vanafV ? v : null; }) : rawH);
     var html = '<div class="c-name" style="color:' + p.kleur + '">' + p.kort + '</div><div class="c-id">' + p.id + '</div>';
     [['H', 'hoogte'], ['E', 'easting'], ['N', 'northing']].forEach(function(cc){
@@ -366,7 +401,13 @@ function buildCards() {
     });
     html += '<div class="c-foot">spreiding hoogte &sigma; ' + (sd === null ? '--' : sd.toFixed(0)) + ' mm' + (vanafV ? ' (sinds verplaatsing)' : '') + '<br>laatste: ' +
       (li >= 0 ? fmtT(T[li]) : '--') + '<br>' + p.H.filter(function(x){ return x !== null; }).length + ' metingen' + '</div>';
-    if (p.verplaatst) {
+    if (laatsteSeg) {
+      var bt = laatsteSeg.vanaf;
+      html += '<div class="c-foot" title="Nieuwe baseline (nulmeting) vanaf ' + bt + ' UTC: H ' + laatsteSeg.H + ' m' +
+        (laatsteSeg.geschat ? ' (geschat uit de metingen; exacte waarde volgt uit Basetime-export)' : '') + '">' +
+        '\u2194 nulmeting aangepast ' + bt.slice(8, 10) + '-' + bt.slice(5, 7) + ' ' + bt.slice(11) + ' UTC (verplaatsing)' +
+        (laatsteSeg.geschat ? ' &asymp;' : '') + '</div>';
+    } else if (p.verplaatst) {
       var vt = p.verplaatst.t, sp = p.verplaatst.sprong_mm;
       html += '<div class="c-foot" title="Sprong door verplaatsing gecorrigeerd: dH ' + sp.H + ' / dE ' + sp.E + ' / dN ' + sp.N + ' mm">' +
         '\u2194 verplaatst ' + vt.slice(8, 10) + '-' + vt.slice(5, 7) + ' ' + vt.slice(11) + ' UTC &ndash; sprong gecorrigeerd</div>';
@@ -610,6 +651,8 @@ d3.select('#tgl-raw').on('click', function(){ showRaw = !showRaw; if (!showRaw &
 d3.select('#tgl-avg').on('click', function(){ showAvg = !showAvg; if (!showRaw && !showAvg) { showRaw = true; setLayer('tgl-raw', true); } setLayer('tgl-avg', showAvg); refresh(); });
 d3.select('#sel-win').on('change', function(){ winH = +this.value; recompute(); refresh(); });
 d3.select('#sel-ref').on('change', function(){ refMode = this.value; recompute(); refresh(); });
+if (!HEEFT_BASELINE) { d3.select('#opt-basetime').remove(); }
+document.getElementById('sel-ref').value = refMode;
 d3.select('#sel-bg').on('change', drawBg);
 d3.select('#vf').on('input', function(){ vfac = +this.value; drawMapData(); });
 d3.select('#btn-all').on('click', function(){ P.forEach(function(p){ act[p.id] = true; }); paintButtons(); drawCharts(); drawMapData(); });

@@ -142,6 +142,7 @@ def bouw_gnss(p, ruw):
     vanaf = p.get("opties", {}).get("vanaf", "1900-01-01 00:00")
     punten = gd.lees_data(ruw, vanaf)
     gd.corrigeer_verplaatsingen(punten, p.get("opties", {}).get("verplaatsingen", {}))
+    gd.zet_baselines(punten, p.get("opties", {}).get("baselines", {}))
     # Punten zonder enkele geldige meting (bv. net geplaatst) nog niet tonen
     punten = [q for q in punten if not q["df"].dropna(subset=["E", "N", "H"]).empty]
     if not punten:
